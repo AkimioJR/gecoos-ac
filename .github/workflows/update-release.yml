@@ -1,0 +1,137 @@
+name: Update release
+
+on:
+  schedule:
+    # 20:00 Beijing time (UTC+8)
+    - cron: "0 12 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-release
+  cancel-in-progress: false
+
+env:
+  RELEASE_REPO: AkimioJR/gecoos-ac
+  CRAWLER_REPO: AkimioJR/gecoos-crawler
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout public repository
+        uses: actions/checkout@v6
+        with:
+          path: public
+
+      - name: Checkout private crawler repository
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ env.CRAWLER_REPO }}
+          token: ${{ secrets.CRAWLER_REPO_TOKEN }}
+          path: crawler
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: |
+            **/pyproject.toml
+            **/uv.lock
+
+      - name: Install dependencies
+        working-directory: crawler
+        run: uv sync --frozen
+
+      - name: Probe upstream tag
+        id: upstream
+        working-directory: crawler
+        run: uv run scripts/probe_gac_version.py
+
+      - name: Check latest release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_TAG: ${{ steps.upstream.outputs.tag }}
+        run: |
+          set -euo pipefail
+          latest_tag="$(gh release list --repo "$RELEASE_REPO" --limit 1 --json tagName --jq '.[0].tagName // ""')"
+          echo "latest_tag=$latest_tag" >> "$GITHUB_OUTPUT"
+          if [ "$latest_tag" = "$UPSTREAM_TAG" ]; then
+            echo "needs_update=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "needs_update=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download upstream assets
+        if: steps.release.outputs.needs_update == 'true'
+        working-directory: crawler
+        run: uv run scripts/download_gac_assets.py --result-path assets/raw/download_result.json
+
+      - name: Extract release assets
+        if: steps.release.outputs.needs_update == 'true'
+        working-directory: crawler
+        run: uv run scripts/extract_gac_assets.py --download-result assets/raw/download_result.json
+
+      - name: Prepare release body
+        if: steps.release.outputs.needs_update == 'true'
+        id: release_meta
+        working-directory: crawler
+        run: uv run scripts/prepare_release_body.py --download-result assets/raw/download_result.json --updatelog-path ../public/updatelog --body-path ../public/.release_body.md
+
+      - name: Verify probed tag
+        if: steps.release.outputs.needs_update == 'true'
+        env:
+          UPSTREAM_TAG: ${{ steps.upstream.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.release_meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          test "$UPSTREAM_TAG" = "$RELEASE_VERSION"
+
+      - name: Commit updatelog
+        if: steps.release.outputs.needs_update == 'true'
+        working-directory: public
+        env:
+          UPSTREAM_TAG: ${{ steps.upstream.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git config user.email "actions@github.com"
+          git config user.name "GitHub Actions"
+          git add updatelog
+          if git diff --cached --quiet; then
+            echo "No updatelog changes to commit."
+          else
+            git commit -m "update: sync GAC updatelog for $UPSTREAM_TAG"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
+
+      - name: Push tag
+        if: steps.release.outputs.needs_update == 'true'
+        working-directory: public
+        env:
+          UPSTREAM_TAG: ${{ steps.upstream.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+          if git rev-parse -q --verify "refs/tags/$UPSTREAM_TAG"; then
+            echo "Tag $UPSTREAM_TAG already exists locally."
+          else
+            git tag "$UPSTREAM_TAG"
+            git push origin "$UPSTREAM_TAG"
+          fi
+
+      - name: Publish release
+        if: steps.release.outputs.needs_update == 'true'
+        uses: softprops/action-gh-release@master
+        with:
+          repository: ${{ env.RELEASE_REPO }}
+          tag_name: ${{ steps.upstream.outputs.tag }}
+          name: ${{ steps.upstream.outputs.tag }}
+          body_path: public/.release_body.md
+          files: crawler/assets/release/*
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

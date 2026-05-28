@@ -82,7 +82,7 @@ jobs:
         if: steps.release.outputs.needs_update == 'true'
         id: release_meta
         working-directory: ${{ env.CRAWLER_REPO_PATH }}
-        run: uv run scripts/prepare_release_body.py --download-result assets/raw/download_result.json --updatelog-path "${GITHUB_WORKSPACE}/${RELEASE_REPO_PATH}/updatelog" --body-path "${GITHUB_WORKSPACE}/${RELEASE_REPO_PATH}/.release_body.md"
+        run: uv run scripts/prepare_release_body.py
 
       - name: Verify probed tag
         if: steps.release.outputs.needs_update == 'true'
@@ -102,6 +102,7 @@ jobs:
           set -euo pipefail
           git config user.email "actions@github.com"
           git config user.name "GitHub Actions"
+          cp "${GITHUB_WORKSPACE}/${CRAWLER_REPO_PATH}/updatelog" updatelog
           git add updatelog
           if git diff --cached --quiet; then
             echo "No updatelog changes to commit."
@@ -132,7 +133,7 @@ jobs:
           repository: ${{ env.RELEASE_REPO }}
           tag_name: ${{ steps.upstream.outputs.tag }}
           name: ${{ steps.upstream.outputs.tag }}
-          body_path: ${{ env.RELEASE_REPO_PATH }}/.release_body.md
+          body_path: ${{ env.CRAWLER_REPO_PATH }}/.release_body.md
           files: ${{ env.CRAWLER_REPO_PATH }}/assets/release/*
           fail_on_unmatched_files: true
         env:

@@ -16,6 +16,8 @@ concurrency:
 env:
   RELEASE_REPO: AkimioJR/gecoos-ac
   CRAWLER_REPO: AkimioJR/gecoos-crawler
+  RELEASE_REPO_PATH: public
+  CRAWLER_REPO_PATH: crawler
 
 jobs:
   update:
@@ -25,30 +27,30 @@ jobs:
       - name: Checkout public repository
         uses: actions/checkout@v6
         with:
-          path: public
+          path: ${{ env.RELEASE_REPO_PATH }}
 
       - name: Checkout private crawler repository
         uses: actions/checkout@v6
         with:
           repository: ${{ env.CRAWLER_REPO }}
           token: ${{ secrets.CRAWLER_REPO_TOKEN }}
-          path: crawler
+          path: ${{ env.CRAWLER_REPO_PATH }}
 
       - name: Setup uv
         uses: astral-sh/setup-uv@v8.1.0
         with:
           enable-cache: true
           cache-dependency-glob: |
-            **/pyproject.toml
-            **/uv.lock
+            ${{ env.CRAWLER_REPO_PATH }}/pyproject.toml
+            ${{ env.CRAWLER_REPO_PATH }}/uv.lock
 
       - name: Install dependencies
-        working-directory: crawler
+        working-directory: ${{ env.CRAWLER_REPO_PATH }}
         run: uv sync --frozen
 
       - name: Probe upstream tag
         id: upstream
-        working-directory: crawler
+        working-directory: ${{ env.CRAWLER_REPO_PATH }}
         run: uv run scripts/probe_gac_version.py
 
       - name: Check latest release
@@ -68,19 +70,19 @@ jobs:
 
       - name: Download upstream assets
         if: steps.release.outputs.needs_update == 'true'
-        working-directory: crawler
+        working-directory: ${{ env.CRAWLER_REPO_PATH }}
         run: uv run scripts/download_gac_assets.py --result-path assets/raw/download_result.json
 
       - name: Extract release assets
         if: steps.release.outputs.needs_update == 'true'
-        working-directory: crawler
+        working-directory: ${{ env.CRAWLER_REPO_PATH }}
         run: uv run scripts/extract_gac_assets.py --download-result assets/raw/download_result.json
 
       - name: Prepare release body
         if: steps.release.outputs.needs_update == 'true'
         id: release_meta
-        working-directory: crawler
-        run: uv run scripts/prepare_release_body.py --download-result assets/raw/download_result.json --updatelog-path ../public/updatelog --body-path ../public/.release_body.md
+        working-directory: ${{ env.CRAWLER_REPO_PATH }}
+        run: uv run scripts/prepare_release_body.py --download-result assets/raw/download_result.json --updatelog-path "${GITHUB_WORKSPACE}/${RELEASE_REPO_PATH}/updatelog" --body-path "${GITHUB_WORKSPACE}/${RELEASE_REPO_PATH}/.release_body.md"
 
       - name: Verify probed tag
         if: steps.release.outputs.needs_update == 'true'
@@ -93,7 +95,7 @@ jobs:
 
       - name: Commit updatelog
         if: steps.release.outputs.needs_update == 'true'
-        working-directory: public
+        working-directory: ${{ env.RELEASE_REPO_PATH }}
         env:
           UPSTREAM_TAG: ${{ steps.upstream.outputs.tag }}
         run: |
@@ -110,7 +112,7 @@ jobs:
 
       - name: Push tag
         if: steps.release.outputs.needs_update == 'true'
-        working-directory: public
+        working-directory: ${{ env.RELEASE_REPO_PATH }}
         env:
           UPSTREAM_TAG: ${{ steps.upstream.outputs.tag }}
         run: |
@@ -130,8 +132,8 @@ jobs:
           repository: ${{ env.RELEASE_REPO }}
           tag_name: ${{ steps.upstream.outputs.tag }}
           name: ${{ steps.upstream.outputs.tag }}
-          body_path: public/.release_body.md
-          files: crawler/assets/release/*
+          body_path: ${{ env.RELEASE_REPO_PATH }}/.release_body.md
+          files: ${{ env.CRAWLER_REPO_PATH }}/assets/release/*
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ github.token }}

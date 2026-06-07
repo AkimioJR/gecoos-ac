@@ -22,7 +22,7 @@
 
 Release tag 使用上游产品版本号，例如 `v2.2`。
 
-更新日志会同步到仓库根目录的 [updatelog](./updatelog)，每次自动发布时也会从最新日期的小节生成 Release body。
+更新日志会同步到仓库根目录的 [changelog](./changelog)，每次自动发布时也会从最新日期的小节生成 Release body。
 
 ## 自动更新
 

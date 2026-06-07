@@ -93,7 +93,7 @@ jobs:
           set -euo pipefail
           test "$UPSTREAM_TAG" = "$RELEASE_VERSION"
 
-      - name: Commit updatelog
+      - name: Commit changelog
         if: steps.release.outputs.needs_update == 'true'
         working-directory: ${{ env.RELEASE_REPO_PATH }}
         env:
@@ -102,12 +102,12 @@ jobs:
           set -euo pipefail
           git config user.email "actions@github.com"
           git config user.name "GitHub Actions"
-          cp "${GITHUB_WORKSPACE}/${CRAWLER_REPO_PATH}/updatelog" updatelog
-          git add updatelog
+          cp "${GITHUB_WORKSPACE}/${CRAWLER_REPO_PATH}/changelog" changelog
+          git add changelog
           if git diff --cached --quiet; then
-            echo "No updatelog changes to commit."
+            echo "No changelog changes to commit."
           else
-            git commit -m "update: sync GAC updatelog for $UPSTREAM_TAG"
+            git commit -m "update: sync GAC changelog for $UPSTREAM_TAG"
             git push origin "HEAD:${GITHUB_REF_NAME}"
           fi
 
